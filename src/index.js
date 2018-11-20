@@ -19,6 +19,7 @@ function createMessage(payload = []) {
   }
 
   const message = {
+    payload,
     push,
     pop,
     shift,

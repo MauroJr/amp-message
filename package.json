@@ -29,6 +29,6 @@
   },
   "dependencies": {
     "@bitbybit/amp": "^1.0.0",
-    "fast-json-stringify": "^1.9.1"
+    "fast-json-stringify": "^1.9.2"
   }
 }

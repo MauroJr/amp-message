@@ -1,71 +1,72 @@
 'use strict';
 
-/**
- * Module dependencies.
- */
-
 const fmt = require('util').format;
 const amp = require('@bitbybit/amp');
+const fastJson = require('fast-json-stringify');
 
-/**
- * Proxy methods.
- */
-
-var methods = [
-  'push',
-  'pop',
-  'shift',
-  'unshift'
-];
-
-/**
- * Expose `Message`.
- */
-
-module.exports = Message;
+module.exports = createMessage;
 
 /**
  * Initialize an AMP message with the
  * given `args` or message buffer.
  *
- * @param {Array|Buffer} args or blob
+ * @param {array | Buffer} payload or blob
  * @api public
  */
-function Message(args) {
-  if (Buffer.isBuffer(args)) args = decode(args);
-  this.args = args || [];
-}
+function createMessage(payload = []) {
+  if (Buffer.isBuffer(payload)) {
+    payload = decode(payload);
+  }
 
-// proxy methods
-
-methods.forEach(function (method) {
-  Message.prototype[method] = function () {
-    return this.args[method].apply(this.args, arguments);
+  const message = {
+    push,
+    pop,
+    shift,
+    unshift,
+    toBuffer,
+    inspect
   };
-});
 
-/**
- * Inspect the message.
- *
- * @return {String}
- * @api public
- */
+  function push(...args) {
+    payload.push(...args);
+    return message;
+  }
 
-Message.prototype.inspect = function () {
-  return fmt('<Message args=%d size=%d>',
-    this.args.length,
-    this.toBuffer().length);
-};
+  function pop() {
+    payload.pop();
+    return message;
+  }
 
-/**
- * Return an encoded AMP message.
- *
- * @return {Buffer}
- * @api public
- */
-Message.prototype.toBuffer = function () {
-  return encode(this.args);
-};
+  function shift() {
+    payload.shift();
+    return message;
+  }
+
+  function unshift() {
+    payload.unshift();
+    return message;
+  }
+
+  /**
+   * Return an encoded AMP message.
+   *
+   * @return {Buffer}
+   * @api public
+   */
+  function toBuffer() {
+    return encode(payload);
+  }
+
+  /**
+   * Inspect the message.
+   *
+   * @return {String}
+   * @api public
+   */
+  function inspect() {
+    return fmt('<Message args=%d size=%d>', payload.length, toBuffer().length);
+  }
+}
 
 /**
  * Decode `msg` and unpack all args.
@@ -75,14 +76,34 @@ Message.prototype.toBuffer = function () {
  * @api private
  */
 function decode(msg) {
-  var args = amp.decode(msg);
-  var i;
+  const args = amp.decode(msg);
+  const argsLen = args.length;
 
-  for (i = 0; i < args.length; i += 1) {
-    args[i] = unpack(args[i]);
+  let index = 0;
+  while (index < argsLen) {
+    args[index] = unpack(args[index]);
+    index += 1;
   }
 
   return args;
+}
+
+/**
+ * Unpack `arg`.
+ *
+ * @param {string | Buffer} payload
+ * @return {Mixed}
+ * @api private
+ */
+function unpack(payload) {
+  // json
+  if (isJSON(payload)) return JSON.parse(payload.slice(2));
+
+  // string
+  if (isString(payload)) return payload.slice(2).toString();
+
+  // blob
+  return payload;
 }
 
 /**
@@ -92,15 +113,17 @@ function decode(msg) {
  * @return {Buffer}
  * @api private
  */
-function encode(args) {
-  var tmp = new Array(args.length);
-  var i;
+function encode(args = []) {
+  const argsLen = args.length;
+  const packed = new Array(argsLen);
 
-  for (i = 0; i < args.length; i += 1) {
-    tmp[i] = pack(args[i]);
+  let index = 0;
+  while (index < argsLen) {
+    packed[index] = pack(args[index]);
+    index += 1;
   }
 
-  return amp.encode(tmp);
+  return amp.encode(packed);
 }
 
 /**
@@ -111,51 +134,35 @@ function encode(args) {
  * @return {Buffer}
  * @api private
  */
-function pack(arg, schema) {
+function pack(payload, schema) {
   // blob
-  if (Buffer.isBuffer(arg)) return arg;
+  if (Buffer.isBuffer(payload)) return payload;
 
   // string
-  if (typeof arg === 'string') return Buffer.from(`s:${arg}`);
+  if (typeof payload === 'string') return Buffer.from(`s:${payload}`);
 
   // undefined
-  if (arg === undefined) arg = null;
+  if (payload === undefined) payload = null;
 
   // json
-  return Buffer.from(`j:${schema ? JSON.stringify(arg)}`);
-}
+  if (schema) {
+    const stringify = fastJson(schema);
+    return Buffer.from(`j:${stringify(payload)}`);
+  }
 
-/**
- * Unpack `arg`.
- *
- * @param {Buffer} arg
- * @return {Mixed}
- * @api private
- */
-
-function unpack(arg) {
-  // json
-  if (isJSON(arg)) return JSON.parse(arg.slice(2));
-
-  // string
-  if (isString(arg)) return arg.slice(2).toString();
-
-  // blob
-  return arg;
+  return Buffer.from(`j:${JSON.stringify(payload)}`);
 }
 
 /**
  * String argument.
  */
-
 function isString(arg) {
-  return 115 == arg[0] && 58 == arg[1];
+  return arg[0] === 115 && arg[1] === 58;
 }
 
 /**
  * JSON argument.
  */
-
 function isJSON(arg) {
-  return 106 == arg[0] && 58 == arg[1];
+  return arg[0] === 106 && arg[1] === 58;
 }
